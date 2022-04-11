@@ -1,4 +1,5 @@
-console.log("Chrome extension ready to go!");
+console.log("Content Script Started");
+
 SendPageText();
 
 async function SendPageText(){
@@ -7,9 +8,9 @@ async function SendPageText(){
 }
 
 async function RequestFromBackground(obj){
-    return new Promise((res,rej) => {
+    return new Promise((resolve, reject) => {
         chrome.runtime.sendMessage(obj, response => {
-            res(response);
+            resolve(response);
         })
     })
 }

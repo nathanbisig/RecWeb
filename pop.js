@@ -18,7 +18,7 @@ var showRecommendations = function(recommendations) {
     var recommendationsHTML = '<ul>';
     for (var key in recommendations){
         var rec = recommendations[key];
-        recommendationsHTML +='<li><a href="' + rec.link + '">' + rec.label + '</a><p>' + rec.text + '</p></li>';
+        recommendationsHTML +='<li><a href="' + rec.link + '">' + rec.title + '</a><p>' + rec.snippet + '</p></li>';
     }
     recommendationsHTML += '</ul>';
     document.querySelector('._recommendations_list ul').outerHTML = recommendationsHTML;
