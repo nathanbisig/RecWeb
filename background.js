@@ -1,7 +1,7 @@
 // #region Config
 const MAX_PAGE_LENGTH = 1000000;
-const BASE_MINIMUM_REPEATS = 10;
-const MAX_FILES = 6;
+const BASE_MINIMUM_REPEATS = 2;
+const MAX_FILES = 50;
 var stopwords = ['i','also','me','my','myself','we','our','ours','ourselves','you','your','yours','yourself','yourselves','he','him','his','himself','she','her','hers','herself','it','its','itself','they','them','their','theirs','themselves','what','which','who','whom','this','that','these','those','am','is','are','was','were','be','been','being','have','has','had','having','do','does','did','doing','a','an','the','and','but','if','or','because','as','until','while','of','at','by','for','with','about','against','between','into','through','during','before','after','above','below','to','from','up','down','in','out','on','off','over','under','again','further','then','once','here','there','when','where','why','how','all','any','both','each','few','more','most','other','some','such','no','nor','not','only','own','same','so','than','too','very','s','t','can','will','just','don','should','now','·','»','   '];
 
 const DEBUG_MAX_WORDS = 10;
@@ -47,48 +47,84 @@ chrome.runtime.onMessage.addListener(
   
 // #region Processing
 async function ExecuteProcessPage(request){
+    console.log("ExecuteProcessPage");
     try{
         var pageText = request.pageText;
+        var pageUrl = request.pageUrl
+        var alreadyHavePage = await AlreadyHavePage(pageUrl);
         if(pageText.length != null && pageText.length > 0){
-
-            var file = ProcessPage(pageText);
-
-            if(file != null && file != undefined)
+            if(!alreadyHavePage)
             {
-                await SaveFile(file);
+                var file = ProcessPage(pageText);
 
-                var recommendations = await GenerateRecommendations();
-
-                await setStorageData({ "RecWebRecs": recommendations });
-
-                return({status: "Success", 
-                    size: pageText.length,
-                    summary: pageText.substring(0,100),
-                    uniques: file.length,
-                    mostUsedWords: file.slice(0,DEBUG_MAX_WORDS)});
+                if(file != null && file != undefined)
+                {
+                    await SaveFile(file);
+                    await SaveUrl(pageUrl);
+    
+                    await GenerateRecommendationsShort(file);
+    
+                    GenerateRecommendationsLong();
+    
+                    return({status: "Success", 
+                        size: pageText.length,
+                        summary: pageText.substring(0,100),
+                        uniques: file.length,
+                        mostUsedWords: file.slice(0,DEBUG_MAX_WORDS)});
+                    }
+                else
+                {
+                    return({status: "Failure", 
+                        message: "RecWeb - file was null."});
                 }
-            else
-            {
+            }
+            else{
                 return({status: "Failure", 
-                    message: "RecWeb - file was null."});
+                    message: "RecWeb - Page already processed."});
             }
         }
         else{
             return({status: "Failure", 
                 message: "RecWeb - No text was found."});
-        }
+        }  
     }
     catch(error){
         return({status: "Failure", 
             message: "RecWeb - " + error});
     }
 }
+
+async function AlreadyHavePage(url)
+{
+    var pageIds = await RetrievePageIds();
+    if(pageIds == null)
+    {
+        return false;
+    }
+    if(pageIds.includes(url))
+    {
+        return true;
+    }
+    return false;
+}
 // #endregion
 
 
 // #region Get Recommendations
 async function ExecuteGetRecommendations(request){
-    var recommendations = await getStorageData('RecWebRecs');
+    console.log("ExecuteGetRecommendations");
+    var recommendations = await getStorageData('RecWebRecsLong');
+
+    if(recommendations == null || recommendations == undefined)
+    {
+        recommendations = await getStorageData('RecWebRecsShort');
+    }
+    else
+    {
+        var recsShort = await getStorageData('RecWebRecsShort')
+        for(var i=0; i < recsShort.length;i++)
+        recommendations.push(recsShort[i]);
+    }
 
     console.log(recommendations);
 
@@ -111,6 +147,7 @@ async function ExecuteGetRecommendations(request){
 
 // #region Preprocessing
 function ProcessPage(pageText){
+    console.log("ProcessPage");
     title = pageText.substring(0,3);
 
     //Truncate page if needed
@@ -222,7 +259,7 @@ function removeStopwords(str) {
 }  
 
 function wordFilter(word) {
-    if(word != "" && word != " "){
+    if(word != "" && word != " " && word.length>1){
         return true;
     }
     return false;
@@ -238,10 +275,203 @@ function wordFilter(word) {
 
 
 // #region Recomendation Engine
+async function GenerateRecommendationsShort(file)
+{
+    console.log("Starting Short");
 
-async function GenerateRecommendations(){
+    search = FormSearch([file]);
+    console.log("search: " + search);
+
+    recommendations = await GetRecommendationsWithSearch([search]);
+    console.log("SHORT recommendations\/ ");
+    console.log(recommendations);
+
+    await setStorageData({ "RecWebRecsShort": recommendations });
+}
+
+async function GetRecommendationsWithSearch(searches)
+{
+    var recommendations = null;
+    for(var i = 0; i<searches.length;i++)
+    {
+        var xmlResult = await makeRequest("GET", "https://api.valueserp.com/search?api_key=8DEE36D56BE64E608E1357BED89B946E&q="+searches[i]+"&hl=en");
+        jsonResult = JSON.parse(xmlResult);
+        console.log("raw");
+        console.log(jsonResult.organic_results);
+        if(recommendations == null)
+        {
+            recommendations = jsonResult.organic_results;
+            console.log("before concat");
+            console.log(recommendations);
+        }
+        else
+        {
+            for(var j = 0; j<jsonResult.organic_results.length;j++)
+            {
+                recommendations.push(jsonResult.organic_results[j]);
+            }
+            console.log("after concat");
+            console.log(recommendations);
+        }
+    }
+    return recommendations;
+}
+
+function FormSearch(files)
+{
+    //Generate wordInfo
+    var wordInfo = GenerateWordInfo(files);
+
+    //Sort
+    wordInfo.sort((a, b) => {
+        return b.count - a.count;
+    });
+
+    var popularWords = [];
+    for(i = 0; i < wordInfo.length && i < 4; i++)
+    {
+        popularWords.push(wordInfo[i].word);
+    }
+    console.log(popularWords);
+
+    var search = '';
+    for(i = 0; i < popularWords.length; i++)
+    {
+        search = search + popularWords[i] + '+';
+    }
+
+    search = search.slice(0,search.length-1);
+    return search;
+}
+
+async function GenerateRecommendationsLong(){
     var files = await RetrieveFiles();
 
+    //console.log("Raw Files");
+    //console.log(files);
+    //console.log("");
+
+    if(files.length > 10)
+    {
+        var wordInfo = GenerateWordInfo(files);
+    
+        console.log("Word Info");
+        console.log(wordInfo);
+        console.log("");
+    
+        var tfIdfMatrix = FormatMatrix(files.length, wordInfo);
+    
+        console.log("tf-idf Matrix");
+        console.log(tfIdfMatrix);
+        console.log("");
+    
+        //generate kMeans INput
+        var kMeansInput = [];
+        for(var i=0; i < tfIdfMatrix.length; i++)
+        {
+            kMeansInput.push(tfIdfMatrix[i]);
+        }
+    
+        //Run KMEANs 10 times for for 1-files.length+1 clusters
+        kValues = []
+        for(var i =1; i<(files.length/2)+1; i++) // Number of clusters
+        {
+            var clusterData = kmeans(kMeansInput, i);
+            //console.log(clusterData);
+            for(var j =0; j<9; j++) //try to get a better variance
+            {
+                var xclusterData = kmeans(kMeansInput, i);
+                //console.log(xclusterData);
+                if(clusterData.Variance > xclusterData.Variance)
+                {
+                    clusterData = xclusterData;
+                }
+            }
+            kValues.push(clusterData);
+        }
+        console.log(kValues);
+
+        //elbow method
+        var ElbowSheet = {clusters: [], variance: [], d1: [], d2: [], strength: []};
+        for(var i=0; i<kValues.length; i++)
+        {
+            ElbowSheet.clusters.push(kValues[i].clusters);
+            ElbowSheet.variance.push(kValues[i].Variance);
+            if(i>0)
+            {
+                ElbowSheet.d1.push(ElbowSheet.variance[i-1] - ElbowSheet.variance[i])
+            }
+            else
+            {
+                ElbowSheet.d1.push(-99)
+            }
+            if(i>1)
+            {
+                ElbowSheet.d2.push(ElbowSheet.d1[i-1] - ElbowSheet.d1[i])
+            }
+            else
+            {
+                ElbowSheet.d2.push(-99);
+            }
+        }
+
+        ElbowSheet.strength.push(-99)
+        for(var i=1; i<kValues.length-1; i++)
+        {
+            ElbowSheet.strength.push(ElbowSheet.d2[i+1] - ElbowSheet.d1[i+1])
+        }
+        ElbowSheet.strength.push(-99)
+
+        //console.log(ElbowSheet);
+
+        var maxElbowStrength = -99;
+        var clustersFinal = kValues[0].clusterData;
+        var clustersFinalNumber = 1;
+        for(var i=0;i<ElbowSheet.strength.length;i++)
+        {
+            if(maxElbowStrength < ElbowSheet.strength[i])
+            {
+                maxElbowStrength = ElbowSheet.strength[i];
+                clustersFinal = kValues[i].clusterData;
+                clustersFinalNumber = kValues[i].clusters;
+            }
+        }
+
+        console.log(clustersFinal);
+        console.log(clustersFinalNumber);
+        
+        var searches = [];
+        for(var i = 0; i<clustersFinalNumber;i++)
+        {
+            var clusterFiles = GetClusterFiles(files,clustersFinal,i);
+            searches.push(FormSearch(clusterFiles));
+        }
+        console.log("searches: " + searches);
+
+        var recommendations = await GetRecommendationsWithSearch(searches);
+
+        console.log("LONG recommendations\\/ ")
+        console.log(recommendations);
+
+        await setStorageData({ "RecWebRecsLong": recommendations });
+    }
+}
+
+function GetClusterFiles(files, clusters, cluster)
+{
+    var clusterFiles = [];
+    for(var i=0; i<clusters.length; i++)
+    {
+        if(clusters[i] == cluster)
+        {
+            clusterFiles.push(files[i]);
+        }
+    }
+    return clusterFiles;
+}
+
+function GenerateWordInfo(files)
+{
     var wordInfo = [];
     for(i=0; i<files.length; i++)
     {
@@ -251,10 +481,11 @@ async function GenerateRecommendations(){
             if (object == undefined) {
 
                 var documents = [{id: i, count: files[i][j].count, frequency: files[i][j].termFrequency, TfIdf: 0}];
-                var item = {word: files[i][j].word, documents: documents, score_raw: 0, score_frequency: 0};
+                var item = {word: files[i][j].word, count: files[i][j].count, documents: documents};
                 wordInfo.push(item);
             } else {
                 var document = {id: i, count: files[i][j].count, frequency: files[i][j].termFrequency, TfIdf: 0};
+                object.count += files[i][j].count;
                 object.documents.push(document);
             }
         }
@@ -264,66 +495,47 @@ async function GenerateRecommendations(){
     {
         for(j=0; j<wordInfo[i].documents.length; j++)
         {
-            wordInfo[i].documents[j].tfIdf = wordInfo[i].documents[j].frequency * Math.log(files.length / wordInfo[i].documents.length)
+            wordInfo[i].documents[j].TfIdf = wordInfo[i].documents[j].frequency * Math.log(files.length / wordInfo[i].documents.length)
         }
     }
 
-    for(i=0; i<wordInfo.length; i++)
+    return wordInfo;
+}
+
+function FormatMatrix(numOfDocs, wordInfo)
+{
+    var matrix = [];
+
+    //initialize rows
+    for(i=0; i < numOfDocs; i++)
     {
-        var score = 0;
+        matrix.push([]);
+        for(j=0; j < wordInfo.length; j++)
+        {
+            matrix[i].push(0);
+        }
+    }
+
+    var min = 10;
+    var max = -10;
+    //add values
+    for(i=0; i < wordInfo.length; i++)
+    {
         for(j=0; j<wordInfo[i].documents.length; j++)
         {
-            score += wordInfo[i].documents[j].frequency * (1/((files.length - wordInfo[i].documents[j].id)-.99)) + 1;
+            if(wordInfo[i].documents[j].TfIdf < min)
+            {
+                min = wordInfo[i].documents[j].TfIdf;
+            }
+            if(wordInfo[i].documents[j].TfIdf > max)
+            {
+                max = wordInfo[i].documents[j].TfIdf;
+            }
+            matrix[wordInfo[i].documents[j].id][i] = wordInfo[i].documents[j].TfIdf;
         }
-        wordInfo[i].score_frequency = score;
     }
 
-    for(i=0; i<wordInfo.length; i++)
-    {
-        var score = 0;
-        for(j=0; j<wordInfo[i].documents.length; j++)
-        {
-            score += wordInfo[i].documents[j].count * 1 + (1/((files.length - wordInfo[i].documents[j].id)-.99)) + 1;
-        }
-        wordInfo[i].score_raw = score;
-    }
-
-    wordInfo.sort((a, b) => {
-        return b.score_frequency - a.score_frequency;
-    })
-
-    console.log("--Word Info FREQUENCY--");
-    console.log(wordInfo.slice(0, 10));
-    console.log("----");
-
-    wordInfo.sort((a, b) => {
-        return b.score_raw - a.score_raw;
-    })
-
-    console.log("--Word Info RAW--");
-    console.log(wordInfo.slice(0, 10));
-    console.log("----");
-
- 
-
-    var bestWords = [];
-    for(i = 0; i < wordInfo.length && i < 0; i++)
-    {
-        bestWords.push(wordInfo[i].word);
-    }
-    console.log(bestWords);
-
-    var xmlResult;
-    var recommendations = [];
-    for(i = 0; i < bestWords.length; i++){
-        xmlResult = await makeRequest("GET", "https://api.valueserp.com/search?api_key=8DEE36D56BE64E608E1357BED89B946E&q="+bestWords[i]+"&hl=en");
-        jsonResult = JSON.parse(xmlResult);
-        recommendations = recommendations.concat(jsonResult.organic_results)
-    }
-
-    console.log(recommendations);
-
-    return recommendations;
+    return matrix;
 }
 
 
@@ -368,7 +580,7 @@ async function SaveFile(file){
             console.log("Files in storage is "+ recWebFiles.length)
             if(recWebFiles.length > MAX_FILES - 1)
             {
-                recWebFiles = recWebFiles.slice(-9);
+                recWebFiles = recWebFiles.slice(-(MAX_FILES-1));
             }
             recWebFiles.push(file);
             await setStorageData({ "RecWebFiles": recWebFiles });
@@ -376,16 +588,47 @@ async function SaveFile(file){
     }
 }
 
+async function SaveUrl(url){
+    if(url.length > 0)
+    {
+        var pageIds = await getStorageData('PageIds')
+        //console.log(pageIds);
+        if(pageIds == undefined || pageIds == null){
+            //console.log("Save File - und");
+            pageIds = [url];
+            await setStorageData({ "PageIds": pageIds });
+        }
+        else{
+            console.log("PageIds in storage is "+ pageIds.length)
+            if(pageIds.length > MAX_FILES - 1)
+            {
+                pageIds = pageIds.slice(-(MAX_FILES-1));
+            }
+            pageIds.push(url);
+            await setStorageData({ "PageIds": pageIds });
+        }
+    }
+}
+
+
+
 async function RetrieveFiles(){
     var recWebFiles = await getStorageData('RecWebFiles')
     if(recWebFiles == undefined){
-        //console.log("RetrieveFiles - und");
         return null;
     }
     else{
-        //console.log("RetrieveFiles - Success");
-        //console.log(recWebFiles);
         return recWebFiles;
+    }
+}
+
+async function RetrievePageIds(){
+    var pageIds = await getStorageData('PageIds')
+    if(pageIds == undefined){
+        return null;
+    }
+    else{
+        return pageIds;
     }
 }
 
@@ -417,118 +660,127 @@ const average = arr => arr.reduce((a,b) => a + b, 0) / arr.length;
 // #endregion
 
 
-// #region Depricated
-function ExtractLabel(index, text){
-    var label = '';
-    var foundGreaterThan = false;
-    var foundLessThan = false;
-    var next = index+7;
-    while(!foundLessThan && next - index < 100){
-        if(foundGreaterThan){
-            if(text[next] == "<"){
-                foundLessThan = true;
+// #region K-Means
+
+function kmeans(data, config) {
+
+    //initialize centroids with random data points
+    var centroids = [];
+    while(centroids.length < config)
+    {
+      var randomNumber = getRandomInt(data.length);
+      if(!centroids.includes(data[randomNumber]))
+      {
+          centroids.push(data[randomNumber]);
+      }
+    } 
+
+    //Assign data to clusters
+    var clusterData_previous = updateClusters(data, centroids);
+
+    //Perform max 10 kMeans iterations
+    for(var i=0; i < 10; i++)
+    {
+        centroids = updateCentroids(data, clusterData_previous, centroids);
+        clusterData = updateClusters(data, centroids);
+        //console.log(clusterData);
+        //console.log(centroids);
+        if(JSON.stringify(clusterData) === JSON.stringify(clusterData_previous))
+        {
+            break;
+        }
+        clusterData_previous = clusterData
+    }
+
+    var variance = 0;
+    for(var i=0; i<data.length;i++)
+    {
+        variance += cosSim(data[i],centroids[clusterData[i]]);
+    }
+    variance = (data.length - variance) / data.length;
+
+    return {clusters: config, clusterData: clusterData, Variance: variance};
+}
+
+function updateClusters(data, centroids)
+{
+    var clusterData = [];
+    for(var i=0; i<data.length; i++)
+    {
+        clusterData.push(99);
+    }
+    for(var i=0; i < data.length; i++)
+    {
+        var datum = data[i];
+        var max = Number.MIN_SAFE_INTEGER ;
+        for(var j=0; j< centroids.length; j++)
+        {
+            var sim = cosSim(datum,centroids[j]);
+            if(sim > max)
+            {
+                clusterData[i] = j;
+                max = sim;
             }
-            else{
-                label = label + text[next];
+        }
+    }
+    return clusterData;
+}
+
+function updateCentroids(data, clusterData, centroids)
+{
+    var newCentroids = [];
+    for(var i=0; i<centroids.length; i++)
+    {
+        var cluster = [];
+        for(var j=0; j < data.length; j++)
+        {
+            if(clusterData[j] == i)
+            {
+                cluster.push(data[j]);
             }
         }
-        else if(text[next] == ">"){
-            foundGreaterThan = true;
-        }
-        next++;
-    }
 
-    label = replaceAll(label,'&#39;','\'');
-    label = replaceAll(label,'&amp;','&');
-    return label;
-}
-function ExtractLink(index, string){
-    var link = '';
-    var foundBeg = false;
-    var foundEnd = false;
-    var beg;
-    var end;
-    var next = index;
-    while(!foundBeg && index - next < 1000){
-        if(string[next] == "\"" 
-         && string[next-1] == "="
-         && string[next-2] == "f"
-         && string[next-3] == "e"
-         && string[next-4] == "r"){
-            foundBeg = true;
-            beg = next+1;
+        var newCentroid = []
+        for(var j=0; j < cluster[0].length; j++)
+        {
+            newCentroid.push(0);
         }
-        next--;
-    }
-    while(!foundEnd && next - index < 5000){
-        if(string[next] == "\"" 
-         && string[next+1] == " "){
-            foundEnd = true;
-            end = next;
+        for(var j=0; j < cluster.length; j++)
+        {
+            for(var k=0; k < cluster[0].length; k++)
+            {
+                newCentroid[k] += cluster[j][k];
+            }
         }
-        next++;
-    }
-
-    if(!foundBeg || !foundEnd){
-        return '';
-    }
-    else{
-        link = string.substring(beg,end);
-        return link;
-    }
-}
-function ExtractText(index, string){
-    var substring = string.substring(index);
-    var emAnchor = substring.search("<em>");
-    var text = '';
-    var foundBeg = false;
-    var foundEnd = false;
-    var beg;
-    var end;
-    var next = emAnchor;
-    while(!foundBeg && emAnchor - next < 1000){
-        if(substring[next] == ">" && substring[next-1] == "n"){
-            foundBeg = true;
-            beg = next+1;
+        for(var j=0; j<newCentroid.length; j++)
+        {
+            newCentroid[j] = newCentroid[j] / cluster.length;
         }
-        next--;
+    
+        newCentroids.push(newCentroid);
     }
-    next = emAnchor;
-    while(!foundEnd && next - emAnchor < 1000){
-        if(substring[next] == "<" && substring[next+1] == "/" && substring[next+2] == "s"){
-            foundEnd = true;
-            end = next;
-        }
-        next++;
-    }
-
-    if(!foundBeg || !foundEnd){
-        return '';
-    }
-    else{
-        text = substring.substring(beg,end);
-        text = replaceAll(text,'<em>','');
-        text = replaceAll(text,'</em>','');
-        text = replaceAll(text,'&#39;','\'');
-        text = replaceAll(text,'&amp;','&');
-        return text;
-    }
+    return newCentroids;
 }
 
-function dreplaceAll(string, search, replace) {
-    return string.split(search).join(replace);
+function cosSim(a,b)
+{
+    var dotp = 0;
+    var maga = 0
+    var magb = 0;
+    for (var i = 0; i < a.length; i++) 
+    {
+        dotp += a[i] * b[i];
+        maga += Math.pow(a[i], 2);
+        magb += Math.pow(b[i], 2);
+    }
+    maga = Math.sqrt(maga);
+    magb = Math.sqrt(magb);
+    var d = dotp / (maga * magb);
+    return d == Infinity ? 0 : d;
+}
+
+function getRandomInt(max) {
+    return Math.floor(Math.random() * max);
   }
 
-  function getIndicesOf(searchStr, str) {
-    var searchStrLen = searchStr.length;
-    if (searchStrLen == 0) {
-        return [];
-    }
-    var startIndex = 0, index, indices = [];
-    while ((index = str.indexOf(searchStr, startIndex)) > -1) {
-        indices.push(index);
-        startIndex = index + searchStrLen;
-    }
-    return indices;
-}
 // #endregion
