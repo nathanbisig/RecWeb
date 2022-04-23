@@ -1,5 +1,7 @@
+//This function runs on the load of the pop-up widget
 GetRecommendations();
 
+//Sends a command to the background script to process page and generate recommendations
 async function GetRecommendations(){
     let response = await RequestFromBackground({command: "GET_RECOMMENDATIONS"});
     console.log(response);
@@ -14,6 +16,7 @@ async function RequestFromBackground(obj){
     })
 }
 
+//Formats the recommendations for the HTML in the pop-up widget
 var showRecommendations = function(recommendations) {
     var recommendationsHTML = '<ul>';
     for (var key in recommendations){

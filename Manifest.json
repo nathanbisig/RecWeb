@@ -4,15 +4,15 @@
 	"description": "This extension uses AI to recommend a set of webpages to visit",
 	"version": "1.0",
 	"icons": {
-		"16": "/icons/RecWebLogo_16px.png",
-		"48": "/icons/RecWebLogo_48px.png",
-		"128": "/icons/RecWebLogo_128px.png"
+		"16": "/Icons/RecWebLogo_16px.png",
+		"48": "/Icons/RecWebLogo_48px.png",
+		"128": "/Icons/RecWebLogo_128px.png"
 	},
 	"browser_action": {
 		"default_icon": {
-			"16": "/icons/RecWebLogo_16px.png",
-			"48": "/icons/RecWebLogo_48px.png",
-			"128": "/icons/RecWebLogo_128px.png"
+			"16": "/Icons/RecWebLogo_16px.png",
+			"48": "/Icons/RecWebLogo_48px.png",
+			"128": "/Icons/RecWebLogo_128px.png"
 		},
 		"default_popup": "popup.html",
 		"default_title": "RecWeb"
@@ -20,7 +20,7 @@
 	"content_scripts": [
 		{
 			"matches": ["<all_urls>"],
-			"exclude_matches": ["*://www.google.com/*"],
+			"exclude_matches": ["*://www.google.com/*", "*://www.youtube.com/*"],
 			"js": ["content.js"]
 		}
 	],

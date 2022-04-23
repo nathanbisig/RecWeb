@@ -1,7 +1,7 @@
-console.log("Content Script Started");
-
+//This function runs on page load
 SendPageText();
 
+//Sends a command to the background script to process page and generate recommendations
 async function SendPageText(){
     let response = await RequestFromBackground({command: "PROCESS_PAGE", pageText: getText(), pageUrl: getUrl()});
     console.log(response);
@@ -15,10 +15,12 @@ async function RequestFromBackground(obj){
     })
 }
 
+//Gets the text of the current page
 function getText(){
     return document.body.innerText;
 }
 
+//Gets the url of the current page
 function getUrl(){
     return document.location.href;
 }
