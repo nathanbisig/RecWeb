@@ -99,7 +99,6 @@ async function AlreadyHavePage(url)
 
 // #region Get Recommendations
 async function ExecuteGetRecommendations(){
-    console.log("ExecuteGetRecommendations");
 
     var recommendations = [];
     var randomNumber = 0;
@@ -138,9 +137,6 @@ async function ExecuteGetRecommendations(){
         }
     }
 
-    console.log("POPUP RECS");
-    console.log(recommendations);
-
     if(recommendations != [])
     {
         return({command: "GET_RECOMMENDATIONS", 
@@ -160,14 +156,11 @@ async function ExecuteGetRecommendations(){
 
 // #region Preprocessing
 function ProcessPage(pageText){
-    console.log("ProcessPage");
     title = pageText.substring(0,3);
 
     //Truncate page if it is needlessly long
     if(pageText.length > MAX_PAGE_LENGTH){
-        console.log("Truncating page...");
         pageText = pageText.substring(0,MAX_PAGE_LENGTH);
-        console.log(title +" - " + pageText.length + " chars");
     }
 
     //Remove punctuation
@@ -290,14 +283,10 @@ function wordFilter(word) {
 // #region Recomendation Engine
 async function GenerateRecommendationsShort(file)
 {
-    console.log("Starting Short");
 
     search = FormSearch([file]);
-    console.log("search: " + search);
 
     recommendations = await GetRecommendationsWithSearch([search]);
-    console.log("SHORT recommendations\/ ");
-    console.log(recommendations);
 
     await setStorageData({ "RecWebRecsShort": recommendations });
 }
@@ -305,23 +294,11 @@ async function GenerateRecommendationsShort(file)
 async function GenerateRecommendationsLong(){
     var files = await RetrieveFiles();
 
-    //console.log("Raw Files");
-    //console.log(files);
-    //console.log("");
-
     if(files.length > 10)
     {
         var wordInfo = GenerateWordInfo(files);
     
-        console.log("Word Info");
-        console.log(wordInfo);
-        console.log("");
-    
         var tfIdfMatrix = FormatMatrix(files.length, wordInfo);
-    
-        console.log("tf-idf Matrix");
-        console.log(tfIdfMatrix);
-        console.log("");
     
         //generate kMeans INput
         var kMeansInput = [];
@@ -335,11 +312,9 @@ async function GenerateRecommendationsLong(){
         for(var i =1; i<(files.length/2)+1; i++) // Number of clusters
         {
             var clusterData = kmeans(kMeansInput, i);
-            //console.log(clusterData);
             for(var j =0; j<9; j++) //try to get a better variance
             {
                 var xclusterData = kmeans(kMeansInput, i);
-                //console.log(xclusterData);
                 if(clusterData.Variance > xclusterData.Variance)
                 {
                     clusterData = xclusterData;
@@ -347,7 +322,6 @@ async function GenerateRecommendationsLong(){
             }
             kValues.push(clusterData);
         }
-        console.log(kValues);
 
         //elbow method
         var ElbowSheet = {clusters: [], variance: [], d1: [], d2: [], strength: []};
@@ -380,8 +354,6 @@ async function GenerateRecommendationsLong(){
         }
         ElbowSheet.strength.push(-99)
 
-        //console.log(ElbowSheet);
-
         var maxElbowStrength = -99;
         var clustersFinal = kValues[0].clusterData;
         var clustersFinalNumber = 1;
@@ -394,9 +366,6 @@ async function GenerateRecommendationsLong(){
                 clustersFinalNumber = kValues[i].clusters;
             }
         }
-
-        console.log(clustersFinal);
-        console.log(clustersFinalNumber);
         
         var searches = [];
         for(var i = 0; i<clustersFinalNumber;i++)
@@ -404,12 +373,8 @@ async function GenerateRecommendationsLong(){
             var clusterFiles = GetClusterFiles(files,clustersFinal,i);
             searches.push(FormSearch(clusterFiles));
         }
-        console.log("searches: " + searches);
 
         var recommendations = await GetRecommendationsWithSearch(searches);
-
-        console.log("LONG recommendations\\/ ")
-        console.log(recommendations);
 
         await setStorageData({ "RecWebRecsLong": recommendations });
     }
@@ -422,13 +387,9 @@ async function GetRecommendationsWithSearch(searches)
     {
         var xmlResult = await makeRequest("GET", "https://api.valueserp.com/search?api_key=8DEE36D56BE64E608E1357BED89B946E&q="+searches[i]+"&hl=en");
         jsonResult = JSON.parse(xmlResult);
-        console.log("raw");
-        console.log(jsonResult.organic_results);
         if(recommendations == null)
         {
             recommendations = jsonResult.organic_results;
-            console.log("before concat");
-            console.log(recommendations);
         }
         else
         {
@@ -436,8 +397,6 @@ async function GetRecommendationsWithSearch(searches)
             {
                 recommendations.push(jsonResult.organic_results[j]);
             }
-            console.log("after concat");
-            console.log(recommendations);
         }
     }
     return recommendations;
@@ -464,12 +423,10 @@ function FormSearch(files)
             {
                 if(popularWords[j].includes(wordInfo[i].word))
                 {
-                    console.log("f " + popularWords[j] + " contains " + wordInfo[i].word);
                     add = false;
                 }
                 if(wordInfo[i].word.includes(popularWords[j]))
                 {
-                    console.log("r " + wordInfo[i].word + " contains " + popularWords[j]);
                     add = false;
                     popularWords[j] = wordInfo[i].word;
                 }
@@ -480,7 +437,6 @@ function FormSearch(files)
             popularWords.push(wordInfo[i].word);
         }
     }
-    console.log(popularWords);
 
     var search = '';
     for(i = 0; i < popularWords.length; i++)
@@ -605,14 +561,11 @@ async function SaveFile(file){
     if(file.length > 0)
     {
         var recWebFiles = await getStorageData('RecWebFiles')
-        //console.log(recWebFiles);
         if(recWebFiles == undefined || recWebFiles == null){
-            //console.log("Save File - und");
             recWebFiles = [file];
             await setStorageData({ "RecWebFiles": recWebFiles });
         }
         else{
-            console.log("Files in storage is "+ recWebFiles.length)
             if(recWebFiles.length > MAX_FILES - 1)
             {
                 recWebFiles = recWebFiles.slice(-(MAX_FILES-1));
@@ -627,14 +580,11 @@ async function SaveUrl(url){
     if(url.length > 0)
     {
         var pageIds = await getStorageData('PageIds')
-        //console.log(pageIds);
         if(pageIds == undefined || pageIds == null){
-            //console.log("Save File - und");
             pageIds = [url];
             await setStorageData({ "PageIds": pageIds });
         }
         else{
-            console.log("PageIds in storage is "+ pageIds.length)
             if(pageIds.length > MAX_FILES - 1)
             {
                 pageIds = pageIds.slice(-(MAX_FILES-1));

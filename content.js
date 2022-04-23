@@ -4,7 +4,6 @@ SendPageText();
 //Sends a command to the background script to process page and generate recommendations
 async function SendPageText(){
     let response = await RequestFromBackground({command: "PROCESS_PAGE", pageText: getText(), pageUrl: getUrl()});
-    console.log(response);
 }
 
 async function RequestFromBackground(obj){

@@ -4,7 +4,6 @@ GetRecommendations();
 //Sends a command to the background script to process page and generate recommendations
 async function GetRecommendations(){
     let response = await RequestFromBackground({command: "GET_RECOMMENDATIONS"});
-    console.log(response);
     showRecommendations(response.recommendations);
 }
 
