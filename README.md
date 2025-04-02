@@ -1,2 +1,2 @@
 # RecWeb
-A Chrome extension that uses AI to recommend a set of webpages to visit
+A project done for my Master's of Engineering. A Chrome extension that uses AI to recommend webpages.
